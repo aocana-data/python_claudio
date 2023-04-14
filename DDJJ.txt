@@ -1,0 +1,225 @@
+# agregado por Moni
+import csv
+import pandas as pd
+
+print ('hola')
+#fin agregado por Moni
+
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": 11,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "'es_ES.utf8'"
+      ]
+     },
+     "execution_count": 11,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "import pdfplumber\n",
+    "import pandas as pd\n",
+    "import numpy as np\n",
+    "import shutil\n",
+    "import os\n",
+    "import datetime\n",
+    "import locale\n",
+    "import requests\n",
+    "from tqdm import tqdm\n",
+    "locale.setlocale(locale.LC_ALL, 'es_ES.utf8')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 12,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def download_file(url):\n",
+    "    local_filename = url.split('/')[-1]\n",
+    "\n",
+    "    with requests.get(url) as r:\n",
+    "        with open(local_filename, 'wb') as f:\n",
+    "            f.write(r.content)\n",
+    "        \n",
+    "    return local_filename"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 13,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "path = os.getcwd()\n",
+    "folder = \"ddjj_pdf\"\n",
+    "if os.path.exists(os.path.join(path, folder)) != True:\n",
+    "        os.mkdir(folder)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 14,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "data=pd.read_excel(\"ddjj_url.xlsx\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "files=os.listdir()\n",
+    "files_pdf=[]\n",
+    "for file in files:\n",
+    "    if file.find(\".pdf\") != -1:\n",
+    "        files_pdf.append(file)\n",
+    "files_pdf"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 15,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "100%|██████████| 410/410 [03:54<00:00,  1.75it/s]\n"
+     ]
+    }
+   ],
+   "source": [
+    "dic={}\n",
+    "format = \"%A %d de %B de %Y\"\n",
+    "for url in tqdm(data.url.to_numpy()): #files_pdf\n",
+    "    file = download_file(url)\n",
+    "    temp = pdfplumber.open(file)\n",
+    "    totalpages = len(temp.pages)\n",
+    "    lista=[]\n",
+    "    for i in range(0,totalpages):\n",
+    "        page = temp.pages[i]\n",
+    "        if i == 0:\n",
+    "            try: \n",
+    "                fecha = page.annots[0][\"data\"][\"V\"].decode(\"latin1\")\n",
+    "                dt = datetime.datetime.strptime(fecha,format)\n",
+    "                year = str(dt.year)\n",
+    "                dt = dt.strftime(\"%d/%m/%Y\")\n",
+    "            except:\n",
+    "                fecha = page.annots[1][\"data\"][\"V\"].decode(\"latin1\")\n",
+    "                dt = datetime.datetime.strptime(fecha,format)\n",
+    "                year = str(dt.year)\n",
+    "                dt = dt.strftime(\"%d/%m/%Y\")\n",
+    "        prueba=pd.Series(page.extract_text().split(\"\\n\"))\n",
+    "        if i != totalpages - 1:\n",
+    "            prueba=prueba.str.split(\":\",expand=True)\n",
+    "        lista.append(prueba)\n",
+    "    for j in range(0,len(lista)):\n",
+    "        if j == 0:\n",
+    "            total = lista[j]\n",
+    "        else:\n",
+    "            total=pd.concat([total,lista[j]],axis=0)\n",
+    "    total=total.reset_index(drop=True)\n",
+    "    \n",
+    "    data = total.drop(total.index[range(0,7)]).reset_index(drop=True)\n",
+    "    lista=[]\n",
+    "    c=0\n",
+    "    for i,var in enumerate(data[1]):\n",
+    "        if var == None:\n",
+    "            valor=data[0].iloc[i]\n",
+    "        lista.append(valor) \n",
+    "    data[\"informacion\"]=lista\n",
+    "    for i,var in enumerate(data[0]):\n",
+    "        if var.find(\"Declaro\") != -1 and c == 0:\n",
+    "            c = 1\n",
+    "            index = i\n",
+    "            data[\"informacion\"][index:len(data[0])]=np.nan\n",
+    "    for value1,value2,idx in zip(data[0],data.informacion,data.index):\n",
+    "        if value1 == value2:\n",
+    "            data[1][idx]=\"-\"\n",
+    "        else:\n",
+    "            continue\n",
+    "    mask = data[1] == \"-\"\n",
+    "    data = data[np.logical_not(mask)]\n",
+    "    data[\"periodo\"] = year\n",
+    "    data[\"presentacion\"] = dt\n",
+    "    data= data.rename(columns={0:\"tipo_de_dato\",\n",
+    "                              1:\"valor\"})\n",
+    "    data = data[[\"informacion\",\"tipo_de_dato\",\"valor\",\"presentacion\",\"periodo\"]]\n",
+    "    dic[file.replace(\".pdf\",\"\")]=data\n",
+    "    temp.close()\n",
+    "    shutil.move(file,folder)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 16,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "100%|██████████| 410/410 [00:01<00:00, 220.60it/s]\n"
+     ]
+    }
+   ],
+   "source": [
+    "data=pd.DataFrame()\n",
+    "for key in tqdm(dic.keys()):\n",
+    "    data = pd.concat([data,dic[key]],axis=0)\n",
+    "data.to_excel(\"ddjj.xlsx\",index=False)\n",
+    "data.to_csv(\"ddjj.csv\",index=False)\n",
+    "shutil.rmtree(folder)"
+   # print ('por aquí andamos')
+   ]
+  }
+ ],
+ "metadata": {
+  "interpreter": {
+   "hash": "3c6499dc75e3ee6a52ed0f7db6c3124f403dc5500d6c376344a19bd19d15676c"
+  },
+  "kernelspec": {
+   "display_name": "Python 3.10.1 ('data_env')",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.10.1"
+  },
+  "orig_nbformat": 4
+ },
+ "nbformat": 4,
+ "nbformat_minor": 2
+}
+
+
+# agregado por Moni
+with open('ddjj.csv', mode = 'w' , newline ='') as file:
+    writer = csv.writer(file)
+    for row in data:
+        writer.writerow(row)
+
+# guardar los resultados
+#ruta_guardado = "/DDJJ/ddjj.csv"
+df = pd.DattaFrame(data)
+df.to_csv('ddjj.csv', index=False)
+#fin agregado de Moni
